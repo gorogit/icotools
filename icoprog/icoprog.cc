@@ -560,6 +560,16 @@ int get_time_ms()
 	return s*1000 + ns/1000000;
 }
 
+// Raspberry Pi 4 (BCM2711) at 1.5-1.8 GHz drives the GPIO bitbang in
+// prog_bitstream() fast enough that the effective SPI config clock to the
+// iCE40 FPGA exceeds the ~25 MHz limit on newer kernels, causing CDONE to
+// stay low. Insert a short busy-wait per clock edge so that even at max
+// turbo the bit cell stays well within spec. Harmless on slower Pis.
+static inline void prog_bitbang_delay()
+{
+	for (volatile int i = 0; i < 20; i++) { }
+}
+
 void prog_bitstream(bool reset_only = false)
 {
 	assert(enable_prog_port);
@@ -598,7 +608,9 @@ void prog_bitstream(bool reset_only = false)
 
 	for (int i = 0; i < 8; i++) {
 		digitalWrite(RPI_ICE_CLK, LOW);
+		prog_bitbang_delay();
 		digitalWrite(RPI_ICE_CLK, HIGH);
+		prog_bitbang_delay();
 	}
 
 #ifndef USBMODE
@@ -610,7 +622,9 @@ void prog_bitstream(bool reset_only = false)
 		for (int i = 7; i >= 0; i--) {
 			digitalWrite(RPI_ICE_MOSI, ((byte >> i) & 1) ? HIGH : LOW);
 			digitalWrite(RPI_ICE_CLK, LOW);
+			prog_bitbang_delay();
 			digitalWrite(RPI_ICE_CLK, HIGH);
+			prog_bitbang_delay();
 		}
 
 		if (verbose && !(k % 1024) && k)
@@ -619,7 +633,9 @@ void prog_bitstream(bool reset_only = false)
 
 	for (int i = 0; i < 49; i++) {
 		digitalWrite(RPI_ICE_CLK, LOW);
+		prog_bitbang_delay();
 		digitalWrite(RPI_ICE_CLK, HIGH);
+		prog_bitbang_delay();
 	}
 #else
 	std::vector<uint8_t> data;
